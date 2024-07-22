@@ -58,14 +58,14 @@ def export_to_csv(logs, filepath):
         for log in logs:
             writer.writerow(log)
 
-def re_add_user_to_groups(access_token, user_upn, group_ids):
+def re_add_user_to_groups(access_token, user_upn, selected_groups):
     url_template = "https://graph.microsoft.com/v1.0/groups/{group_id}/members/$ref"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
     user_id = get_user_id(access_token, user_upn)
-    for group_id in group_ids:
+    for group_id, group_name in selected_groups:
         if not is_user_in_group(access_token, user_id, group_id):
             url = url_template.format(group_id=group_id)
             data = {
@@ -73,11 +73,11 @@ def re_add_user_to_groups(access_token, user_upn, group_ids):
             }
             response = requests.post(url, headers=headers, json=data)
             if response.status_code == 204:
-                print(f"Successfully added {user_upn} to group {group_id}")
+                print(f"Successfully added {user_upn} to group {group_name}")
             else:
-                print(f"Failed to add {user_upn} to group {group_id}: {response.text}")
+                print(f"Failed to add {user_upn} to group {group_name}: {response.text}")
         else:
-            print(f"{user_upn} is already a member of group {group_id}")
+            print(f"{user_upn} is already a member of group {group_name}")
 
 def get_user_id(access_token, user_upn):
     url = f"https://graph.microsoft.com/v1.0/users/{user_upn}"
@@ -98,8 +98,6 @@ def is_user_in_group(access_token, user_id, group_id):
     }
     response = requests.get(url, headers=headers)
     return response.status_code == 200
-
-
 def main():
     # Replace these with your actual values
     tenant_id = "tenant_id"
@@ -139,9 +137,9 @@ def main():
                     for modified_property in resource.get('modifiedProperties', []):
                         if modified_property.get('displayName') == 'Group.ObjectID':
                             group_object_id = modified_property.get('oldValue', 'N/A').strip('"')
-                            group_ids.append(group_object_id)
                         if modified_property.get('displayName') == 'Group.DisplayName':
                             group_display_name = modified_property.get('oldValue', 'N/A').strip('"')
+                            group_ids.append((group_object_id, group_display_name))
 
             table.append([
                 Fore.GREEN + user_principal_name + Fore.RESET + ' ' + Fore.RED + 'removed' + Fore.RESET,
@@ -160,9 +158,17 @@ def main():
             export_to_csv(csv_logs, filepath)
             print(f"Data exported to {filepath}")
 
-        re_add_choice = input("Do you want to re-add the user to all these groups? (yes/no): ").strip().lower()
+        re_add_choice = input("Do you want to re-add the user to selected groups? (yes/no): ").strip().lower()
         if re_add_choice == 'yes':
-            re_add_user_to_groups(access_token, user_upn, group_ids)
+            print("Select the groups to re-add the user to (enter the numbers separated by commas):")
+            for index, (group_id, group_name) in enumerate(group_ids, start=1):
+                print(f"{index}. {group_name} (OID: {group_id})")
+
+            selected_indices = input("Enter your choices: ").strip().split(',')
+            selected_groups = [(group_ids[int(index) - 1][0], group_ids[int(index) - 1][1]) for index in
+                               selected_indices if index.isdigit() and 1 <= int(index) <= len(group_ids)]
+
+            re_add_user_to_groups(access_token, user_upn, selected_groups)
 
 
 if __name__ == "__main__":
